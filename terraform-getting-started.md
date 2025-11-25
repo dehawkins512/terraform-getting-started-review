@@ -1,68 +1,145 @@
-# Getting Started with Terraform
+# Run Your First NGINX Container with Terraform
 
-Terraform is the most popular langauge for defining and provisioning infrastructure as code (IaC).
+In this guide, you run an NGINX web server inside a Docker container using Terraform.  
+You learn the complete Terraform workflow: write configuration, initialize providers, preview changes, apply infrastructure, and destroy resources when you no longer need them.
 
-To install Terraform, simply visit [Terraform.io](https://www.terraform.io/downloads.html) and download the compressed binary application executable file deliverable for your platform, machine or environment on which you like to run code and do development.
+**After completing this guide, you will be able to**:
 
-With Terraform installed, let's dive right into it and start creating some infrastructure.
+- Write a basic Terraform configuration that uses the Docker provider
+- Initialize a Terraform project and download required providers
+- Preview planned changes with `terraform plan`
+- Apply infrastructure changes safely
+- Clean up resources with `terraform destroy`
 
-Most guys find it easiest to create a new directory on there local machine and create Terraform configuration code inside it.
+## Prerequisites
+
+- Docker Engine or Docker Desktop running locally
+- Terraform 1.6 or later (download from https://developer.hashicorp.com/terraform/install)
+
+## 1. Create a project directory
+
+Create a new directory for the project and navigate into it.
 
 ```shell
-$ mkdir terraform-demo
-$ cd terraform-demo
+$ mkdir terraform-demo && cd terraform-demo
 ```
 
-Next, create a file for your Terraform configuration code.
+## 2. Write the Terraform configuration
 
-```shell
-$ touch main.tf
-```
-
-Paste the following lines into the file.
+Create a file named `main.tf` and add the following content:
 
 ```hcl
 terraform {
   required_providers {
     docker = {
-      source = "kreuzwerker/docker"
+      source  = "kreuzwerker/docker"
+      version = "~> 3.0"        # ← Added version constraint for reproducibility
     }
   }
 }
-provider "docker" {
-    host = "unix:///var/run/docker.sock"
+
+provider "docker" {}
+
+data "docker_image" "nginx" {
+  name = "nginx:latest"
 }
+<!-- Comment on the data source block -->
+<!-- Suggested comment: Replaced deprecated `docker_image.nginx.latest` reference with a proper data source. Using `.latest` on a resource has been deprecated for years and can cause non-deterministic behavior. -->
+
 resource "docker_container" "nginx" {
-  image = docker_image.nginx.latest
-  name  = "training"
+  name  = "training-nginx"
+  image = data.docker_image.nginx.repo_digest
+
   ports {
     internal = 80
-    external = 80
+    external = 8000           # ← Changed from 80 → 8000 to avoid conflicts with services already running on host port 80
   }
-}
-resource "docker_image" "nginx" {
-  name = "nginx:latest"
 }
 ```
 
-Initialize Terraform with the `init` command. The AWS provider will be installed. 
+The Docker provider automatically connects to the local Docker daemon on macOS, Windows (Docker Desktop), and Linux.
+
+## 3. Initialize the Terraform working directory
 
 ```shell
 $ terraform init
 ```
 
-You shoud check for any errors. If it ran successfully, provision the resource with the `apply` command.
+**Example output**
+```
+Initializing the backend...
+
+Initializing provider plugins...
+- Finding kreuzwerker/docker versions matching "~> 3.0"...
+- Installing kreuzwerker/docker v3.0.2...
+- Installed kreuzwerker/docker v3.0.2 (self-signed, key ID 1234567890ABCDEF)
+
+Partner and community providers are signed by their developers.
+
+Terraform has been successfully initialized!
+```
+
+## 4. Review the execution plan
+
+```shell
+$ terraform plan
+```
+
+**Example output (truncated)**
+```
+data.docker_image.nginx: Reading...
+data.docker_image.nginx: Read complete after 0s [id=sha256:5a0f3a9...]
+
+Terraform will perform the following actions:
+
+  # docker_container.nginx will be created
+  + resource "docker_container" "nginx" {
+      + name  = "training-nginx"
+      + image = "nginx@sha256:5a0f3a9..."
+      + ports {
+          + external = 8000
+          + internal = 80
+        }
+      ...
+    }
+
+Plan: 1 to add, 0 to change, 0 to destroy.
+```
+
+## 5. Apply the configuration
 
 ```shell
 $ terraform apply
 ```
 
-The command will take up to a few minutes to run and will display a message indicating that the resource was created.
+Type `yes` when prompted.
 
-Finally, destroy the infrastructure.
+**Example output (truncated)**
+```
+data.docker_image.nginx: Reading...
+data.docker_image.nginx: Read complete after 0s
+docker_container.nginx: Creating...
+docker_container.nginx: Creation complete after 2s [id=abcd1234...]
+
+Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
+```
+
+Open http://localhost:8000 in your browser. You see the NGINX welcome page.
+
+## 6. Destroy the infrastructure
+
+When you finish, remove the container.
 
 ```shell
 $ terraform destroy
 ```
 
-Look for a message are the bottom of the output asking for confirmation. Type `yes` and hit ENTER. Terraform will destroy the resources it had created earlier.
+Type `yes` when prompted.
+
+**Example output (truncated)**
+```
+docker_container.nginx: Destroying... [id=abcd1234...]
+docker_container.nginx: Destruction complete after 1s
+
+Destroy complete! Resources: 1 destroyed.
+```
